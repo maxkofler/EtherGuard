@@ -51,7 +51,7 @@ impl HandshakeState {
 
         let mut s_pub_i = [0u8; 32];
         OPEN!(
-            &key,
+            key,
             &self.h,        // ad
             &mut s_pub_i,   // pt
             &itor.k_static  // ct || tag
@@ -72,7 +72,7 @@ impl HandshakeState {
 
         let mut timestamp = [0u8; 12];
         OPEN!(
-            &key,
+            key,
             &self.h,         // ad
             &mut timestamp,  // pt
             &itor.timestamp  // ct || tag

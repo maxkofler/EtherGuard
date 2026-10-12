@@ -1,3 +1,5 @@
+//! Wireguard handshake handling from the `Responder` side
+
 use rand::{CryptoRng, Rng};
 use x25519_dalek::{PublicKey, StaticSecret};
 use zerocopy::{IntoBytes, little_endian::U32};
@@ -12,7 +14,7 @@ use crate::{
 const ZEROIZE_STACK_OCTETS: usize = 4096;
 
 #[derive(ZeroizeOnDrop)]
-pub struct HandshakeState {
+pub struct ResponderState {
     c: [u8; 32],
     h: [u8; 32],
 
@@ -21,7 +23,7 @@ pub struct HandshakeState {
     s_pub_i: PublicKey,
 }
 
-impl HandshakeState {
+impl ResponderState {
     pub fn new() -> Self {
         let c: [u8; 32] = HASH!(STRING_WG_CONSTRUCTION.as_bytes());
         let h = HASH!(&c, STRING_WG_IDENTIFIER.as_bytes());

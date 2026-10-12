@@ -1,6 +1,7 @@
 use rand::{CryptoRng, Rng};
 use x25519_dalek::{PublicKey, StaticSecret};
 use zerocopy::{IntoBytes, little_endian::U32};
+use zeroize::{ZeroizeOnDrop, zeroize_stack};
 
 use crate::{
     STRING_WG_CONSTRUCTION, STRING_WG_IDENTIFIER, STRING_WG_LABEL_MAC1,
@@ -8,6 +9,9 @@ use crate::{
     noise::{HASH, KDF1, KDF2, KDF3, MAC, OPEN, SEAL, shared_secret},
 };
 
+const ZEROIZE_STACK_OCTETS: usize = 4096;
+
+#[derive(ZeroizeOnDrop)]
 pub struct HandshakeState {
     c: [u8; 32],
     h: [u8; 32],
@@ -42,6 +46,12 @@ impl HandshakeState {
     }
 
     pub fn consume_itor(&mut self, itor: &InitiatorToResponder, s_priv_r: &StaticSecret) {
+        self.inner_consume_itor(itor, s_priv_r);
+        zeroize_stack::<ZEROIZE_STACK_OCTETS>();
+    }
+
+    #[inline(never)]
+    fn inner_consume_itor(&mut self, itor: &InitiatorToResponder, s_priv_r: &StaticSecret) {
         let s_pub_r = PublicKey::from(s_priv_r);
         self.h = HASH!(&self.h, s_pub_r.as_bytes());
         self.debug_h();
@@ -98,6 +108,17 @@ impl HandshakeState {
     }
 
     pub fn create_rtoi<R: Rng + CryptoRng>(
+        &mut self,
+        rng: &mut R,
+        sender: U32,
+        receiver: U32,
+    ) -> ResponderToInitiator {
+        let r = self.inner_create_rtoi(rng, sender, receiver);
+        zeroize_stack::<ZEROIZE_STACK_OCTETS>();
+        r
+    }
+
+    fn inner_create_rtoi<R: Rng + CryptoRng>(
         &mut self,
         rng: &mut R,
         sender: U32,

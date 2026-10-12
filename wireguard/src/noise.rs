@@ -52,10 +52,10 @@ macro_rules! HMAC {
 macro_rules! KDF1 {
     ($ck:expr, $input:expr) => {{
         use crate::noise::HMAC;
-        use clear_on_drop::clear::Clear;
+        use zeroize::Zeroize;
         let mut t0 = HMAC!($ck, $input);
         let t1 = HMAC!(&t0, &[0x1]);
-        t0.clear();
+        t0.zeroize();
         Into::<[u8; 32]>::into(t1)
     }};
 }
@@ -63,11 +63,11 @@ macro_rules! KDF1 {
 macro_rules! KDF2 {
     ($ck:expr, $input:expr) => {{
         use crate::noise::HMAC;
-        use clear_on_drop::clear::Clear;
+        use zeroize::Zeroize;
         let mut t0 = HMAC!($ck, $input);
         let t1 = HMAC!(&t0, &[0x1]);
         let t2 = HMAC!(&t0, &t1, &[0x2]);
-        t0.clear();
+        t0.zeroize();
         (t1, t2)
     }};
 }
@@ -75,12 +75,12 @@ macro_rules! KDF2 {
 macro_rules! KDF3 {
     ($ck:expr, $input:expr) => {{
         use crate::noise::HMAC;
-        use clear_on_drop::clear::Clear;
+        use zeroize::Zeroize;
         let mut t0 = HMAC!($ck, $input);
         let t1 = HMAC!(&t0, &[0x1]);
         let t2 = HMAC!(&t0, &t1, &[0x2]);
         let t3 = HMAC!(&t0, &t2, &[0x3]);
-        t0.clear();
+        t0.zeroize();
         (t1, t2, t3)
     }};
 }

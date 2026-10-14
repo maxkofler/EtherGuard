@@ -8,7 +8,8 @@ use zeroize::{ZeroizeOnDrop, zeroize_stack};
 use crate::{
     STRING_WG_CONSTRUCTION, STRING_WG_IDENTIFIER, STRING_WG_LABEL_MAC1,
     message::{InitiatorToResponder, ResponderToInitiator},
-    noise::{HASH, KDF1, KDF2, KDF3, MAC, OPEN, SEAL, shared_secret},
+    noise::{HASH, MAC, SEAL},
+    state::State,
 };
 
 const ZEROIZE_STACK_OCTETS: usize = 4096;
@@ -21,6 +22,26 @@ pub struct ResponderState {
     // TODO: Move this out!!!
     e_pub_i: PublicKey,
     s_pub_i: PublicKey,
+}
+
+impl State for ResponderState {
+    fn set_c(&mut self, c: [u8; 32]) {
+        println!("C update: {c:02X?}");
+        self.c = c
+    }
+
+    fn get_c(&self) -> &[u8; 32] {
+        &self.c
+    }
+
+    fn set_h(&mut self, h: [u8; 32]) {
+        println!("H update: {h:02X?}");
+        self.h = h;
+    }
+
+    fn get_h(&self) -> &[u8; 32] {
+        &self.h
+    }
 }
 
 impl ResponderState {
@@ -54,59 +75,19 @@ impl ResponderState {
 
     #[inline(never)]
     fn inner_consume_itor(&mut self, itor: &InitiatorToResponder, s_priv_r: &StaticSecret) {
-        let s_pub_r = PublicKey::from(s_priv_r);
-        self.h = HASH!(&self.h, s_pub_r.as_bytes());
-        self.debug_h();
+        let key = self.derive_key_static(s_priv_r, &PublicKey::from(itor.ephemeral));
+        let s_pub_i = self.open_static(key, &itor.k_static);
+        self.chain_hash_h(&itor.k_static);
+        println!("Public Key: {:02X?}", s_pub_i.as_bytes());
 
-        self.c = KDF1!(&self.c, &itor.ephemeral);
-        self.debug_c();
+        let key = self.derive_key_timestamp(s_priv_r, &s_pub_i);
+        let timestamp = self.open_timestamp(key, &itor.timestamp);
+        self.chain_hash_h(&itor.timestamp);
 
-        self.h = HASH!(&self.h, itor.ephemeral);
-        self.debug_h();
-
+        self.s_pub_i = s_pub_i;
         self.e_pub_i = PublicKey::from(itor.ephemeral);
-        let (c, key) = KDF2!(
-            &self.c,
-            shared_secret(&s_priv_r, &self.e_pub_i).unwrap().as_bytes()
-        );
-        self.c = c.into();
-        self.debug_c();
 
-        let mut s_pub_i = [0u8; 32];
-        OPEN!(
-            key,
-            &self.h,        // ad
-            &mut s_pub_i,   // pt
-            &itor.k_static  // ct || tag
-        )
-        .unwrap();
-        self.s_pub_i = PublicKey::from(s_pub_i);
-
-        println!("SpubI: {:02x?}", s_pub_i);
-        let s_pub_i = PublicKey::from(s_pub_i);
-
-        self.h = HASH!(self.h, itor.k_static);
-        self.debug_h();
-        let (c, key) = KDF2!(
-            &self.c,
-            shared_secret(&s_priv_r, &s_pub_i).unwrap().as_bytes()
-        );
-        self.c = c.into();
-        self.debug_c();
-
-        let mut timestamp = [0u8; 12];
-        OPEN!(
-            key,
-            &self.h,         // ad
-            &mut timestamp,  // pt
-            &itor.timestamp  // ct || tag
-        )
-        .unwrap();
-
-        println!("Timestamp: {timestamp:02x?}");
-
-        self.h = HASH!(self.h, itor.timestamp);
-        self.debug_h();
+        println!("Timestamp: {timestamp:02X?}");
     }
 
     pub fn create_rtoi<R: Rng + CryptoRng>(
@@ -126,46 +107,22 @@ impl ResponderState {
         sender: U32,
         receiver: U32,
     ) -> ResponderToInitiator {
-        //let eph_sk = StaticSecret::new(rng);
         let e_priv_r = StaticSecret::random_from_rng(rng);
         let e_pub_r = PublicKey::from(&e_priv_r);
+        let e_pub_i = self.e_pub_i.clone();
+        let s_pub_i = self.s_pub_i.clone();
 
-        self.c = KDF1!(&self.c, e_pub_r.as_bytes());
-        self.debug_c();
-
-        self.h = HASH!(self.h, e_pub_r.as_bytes());
-        self.debug_h();
-
-        self.c = KDF1!(
-            &self.c,
-            shared_secret(&e_priv_r, &self.e_pub_i).unwrap().as_bytes()
-        );
-        self.debug_c();
-
-        self.c = KDF1!(
-            &self.c,
-            shared_secret(&e_priv_r, &self.s_pub_i).unwrap().as_bytes()
-        );
-        self.debug_c();
-
-        let preshared_key = [0u8; 32];
-        let (c, t, k) = KDF3!(&self.c, &preshared_key);
-        self.c = c;
-        self.debug_c();
-
-        self.h = HASH!(self.h, t);
-        self.debug_h();
+        let key = self.derive_key_empty(&e_priv_r, [0; 32], &e_pub_i, &s_pub_i);
 
         let mut empty = [0u8; 16];
         SEAL!(
-            k,
+            key,
             &self.h,    // ad
             &[],        // pt
             &mut empty  // ct || tag
         );
 
-        self.h = HASH!(self.h, empty);
-        self.debug_h();
+        self.chain_hash_h(&empty);
 
         let x = HASH!(STRING_WG_LABEL_MAC1.as_bytes(), self.s_pub_i.as_bytes());
 

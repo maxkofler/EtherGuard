@@ -4,3 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base64 = { version="0.23.1", default-features = false, features=["alloc"] }
+
+rand = "^0.10"
+wireguard = {path = "./wireguard"}
+
+zerocopy = { version = "0.8.62", features = [] }
+x25519-dalek = "^3.0"
